@@ -4,15 +4,15 @@ import { supabase } from '../lib/supabase'
 const DEFAULT_FOLDERS = ['Editorial', 'Street', 'Campaign', 'Runway', 'Saved']
 
 const DEFAULT_SOURCES = [
-  { name: 'W Magazine',          url: 'wmagazine.com/feed/rss' },
-  { name: 'Antidote Magazine',   url: 'antidote-magazine.com/feed' },
-  { name: 'Dust Magazine',       url: 'dustmagazine.com/feed' },
-  { name: 'Vogue',               url: 'vogue.com/feed/rss' },
-  { name: "Harper's Bazaar",     url: 'harpersbazaar.com/feed/rss' },
-  { name: 'SSENSE Editorial',    url: 'ssense.com/en-us/editorial/feed' },
-  { name: 'Business of Fashion', url: 'businessoffashion.com/feed' },
-  { name: 'System Magazine',     url: 'system-magazine.com' },
-  { name: '032c',                url: '032c.com' },
+  { name: 'Dust Magazine',       url: 'https://dustmagazine.com/feed' },
+  { name: 'Vogue',               url: 'https://www.vogue.com/feed/rss' },
+  { name: 'Vogue Runway',        url: 'https://www.vogue.com/feed/runway/rss' },
+  { name: 'Business of Fashion', url: 'https://www.businessoffashion.com/feed' },
+  { name: 'System Magazine',     url: 'https://system-magazine.com' },
+  { name: '032c',                url: 'https://032c.com/feed' },
+  { name: 'W Magazine',          url: 'https://www.wmagazine.com/feed/rss' },
+  { name: "Harper's Bazaar",     url: 'https://www.harpersbazaar.com/rss/all.xml' },
+  { name: 'SSENSE Editorial',    url: 'https://www.ssense.com/en-us/editorial/feed' },
 ]
 
 export function useInspo() {
@@ -151,18 +151,25 @@ export function useInspo() {
 
   // ── Crawler trigger ───────────────────────────────────────
   const triggerCrawl = useCallback(async (sourceId) => {
-    const { data, error } = await supabase.functions.invoke('crawl-inspo', { body: { source_id: sourceId } })
-    console.log('[inspo] crawl result:', data, error ? { error } : null)
-    // Reload photos after crawl
-    if (!error) {
-      const { data: fresh } = await supabase
-        .from('inspo_photos')
-        .select('*')
-        .or('hidden.is.null,hidden.eq.false')
-        .order('position')
-      if (fresh) setPhotos(fresh)
-    }
-    return { data, error }
+    const resp = await fetch('/api/crawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId }),
+    })
+    const result = await resp.json()
+    console.log('[inspo] crawl result:', result)
+    // Reload photos so new images appear immediately
+    const { data: fresh } = await supabase
+      .from('inspo_photos')
+      .select('*')
+      .or('hidden.is.null,hidden.eq.false')
+      .order('position')
+    if (fresh) setPhotos(fresh)
+    // Update last_crawled_at in local sources state
+    setSources(prev => prev.map(s =>
+      s.id === sourceId ? { ...s, last_crawled_at: new Date().toISOString() } : s
+    ))
+    return result
   }, [])
 
   return {
