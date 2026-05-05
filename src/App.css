@@ -349,8 +349,6 @@ a { color: inherit; }
 .inspo-card-img {
   width: 100%;
   display: block;
-  max-height: 400px;
-  object-fit: cover;
   transition: opacity 0.15s;
 }
 .inspo-card:hover .inspo-card-img { opacity: 0.92; }
