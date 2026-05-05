@@ -3,6 +3,30 @@ import { useInspo } from '../hooks/useInspo'
 
 const FAVORITES_ID = '__favorites__'
 
+const STATUS_DOT = {
+  idle:    '#5dcaa5',
+  queued:  '#888',
+  running: '#ef9f27',
+  failed:  '#e24b4a',
+}
+
+const statusDotColor = (src) => {
+  if (!src.enabled) return 'transparent'
+  return STATUS_DOT[src.status] || STATUS_DOT.idle
+}
+
+const formatRelative = (iso) => {
+  if (!iso) return ''
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
 const ALL_TAGS = [
   'warm', 'cool', 'neutral', 'moody', 'monochrome',
   'edgy', 'avant-garde', 'streetwear', 'editorial', 'minimal', 'candid',
@@ -216,12 +240,13 @@ function AddSourceModal({ onSave, onClose }) {
     if (!url.trim()) return
     setSaving(true)
     setErr(null)
-    const { error } = await onSave(null, url, label)
-    setSaving(false)
-    if (error) {
-      setErr(error.message || JSON.stringify(error))
-    } else {
+    try {
+      await onSave(null, url, label)
       onClose()
+    } catch (err) {
+      setErr(err.message || String(err))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -334,8 +359,13 @@ export default function InspoPage() {
   // ── Crawl ─────────────────────────────────────────────────
   async function handleCrawl(sourceId) {
     setCrawlingSourceId(sourceId)
-    await triggerCrawl(sourceId)
-    setCrawlingSourceId(null)
+    try {
+      await triggerCrawl(sourceId)
+    } catch (err) {
+      console.error('[inspo] crawl error:', err)
+    } finally {
+      setCrawlingSourceId(null)
+    }
   }
 
   async function handleClearAll() {
@@ -462,13 +492,23 @@ export default function InspoPage() {
               <div key={src.id} className="inspo-source-row">
                 <div className="inspo-source-info">
                   <span className="inspo-source-label">
+                    <span className="inspo-source-dot" style={{ background: statusDotColor(src) }} />
                     {src.name || (() => { try { return new URL(src.url).hostname } catch { return src.url } })()}
                   </span>
-                  {src.last_crawled_at && (
-                    <span className="inspo-source-crawled">
-                      Crawled {new Date(src.last_crawled_at).toLocaleDateString()}
+                  {src.status === 'running' ? (
+                    <span className="inspo-source-crawled">running</span>
+                  ) : src.status === 'queued' ? (
+                    <span className="inspo-source-crawled">queued</span>
+                  ) : src.status === 'failed' ? (
+                    <span className="inspo-source-crawled inspo-source-crawled-failed" onClick={() => handleCrawl(src.id)}>
+                      failed — retry
                     </span>
-                  )}
+                  ) : src.last_crawled_at ? (
+                    <span className="inspo-source-crawled">
+                      {formatRelative(src.last_crawled_at)}
+                      {src.new_posts_count > 0 && ` · ${src.new_posts_count} new`}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="inspo-source-actions">
                   <button

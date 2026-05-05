@@ -27,7 +27,7 @@ export function useInspo() {
         setLoading(true)
         const [fRes, sRes, pRes] = await Promise.all([
           supabase.from('inspo_folders').select('*').order('position'),
-          supabase.from('inspo_sources').select('*').order('position'),
+          supabase.from('inspo_sources').select('*').order('created_at', { ascending: true }),
           supabase.from('inspo_photos').select('*').or('hidden.is.null,hidden.eq.false').order('position'),
         ])
 
@@ -46,7 +46,7 @@ export function useInspo() {
         if (!sRes.error) {
           let loaded = sRes.data || []
           if (loaded.length === 0) {
-            const toSeed = DEFAULT_SOURCES.map((s, i) => ({ name: s.name, url: s.url, position: i }))
+            const toSeed = DEFAULT_SOURCES.map((s) => ({ name: s.name, url: s.url }))
             const { data: seeded } = await supabase.from('inspo_sources').insert(toSeed).select()
             loaded = seeded || []
           }
@@ -61,6 +61,33 @@ export function useInspo() {
       }
     }
     load()
+
+    const channel = supabase
+      .channel('inspo_sources_live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inspo_sources' },
+        (payload) => {
+          setSources((cur) => {
+            if (payload.eventType === 'INSERT') {
+              if (cur.some((s) => s.id === payload.new.id)) return cur
+              return [...cur, payload.new]
+            }
+            if (payload.eventType === 'UPDATE') {
+              return cur.map((s) => (s.id === payload.new.id ? payload.new : s))
+            }
+            if (payload.eventType === 'DELETE') {
+              return cur.filter((s) => s.id !== payload.old.id)
+            }
+            return cur
+          })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Folders ───────────────────────────────────────────────
@@ -86,17 +113,29 @@ export function useInspo() {
   }, [])
 
   // ── Sources ───────────────────────────────────────────────
-  const addSource = useCallback(async (_folderId, url, label) => {
-    const pos = sources.length
-    const payload = { url: url.trim(), name: label?.trim() || null, position: pos }
-    const { data, error } = await supabase
-      .from('inspo_sources')
-      .insert(payload)
-      .select()
-      .single()
-    if (!error && data) setSources(prev => [...prev, data])
-    return { data, error }
-  }, [sources])
+  const addSource = useCallback(async (_folderId, urlOrHandle, label) => {
+    const wantsBackfill = window.confirm(
+      'Backfill the last ~50 posts from this account now?\n\n' +
+      'OK = yes, pull recent posts immediately.\n' +
+      'Cancel = no, just start collecting from tomorrow\'s daily run.'
+    )
+
+    const { data, error } = await supabase.functions.invoke('add-source', {
+      body: {
+        input: urlOrHandle,
+        name: label || undefined,
+        backfill: wantsBackfill,
+      },
+    })
+
+    if (error) throw error
+    if (data?.error) throw new Error(data.error)
+
+    if (data?.source) {
+      setSources((prev) => [...prev, data.source])
+    }
+    return data?.source
+  }, [])
 
   const deleteSource = useCallback(async (id) => {
     const { error } = await supabase.from('inspo_sources').delete().eq('id', id)
@@ -151,25 +190,12 @@ export function useInspo() {
 
   // ── Crawler trigger ───────────────────────────────────────
   const triggerCrawl = useCallback(async (sourceId) => {
-    const resp = await fetch('/api/crawl', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source_id: sourceId }),
+    const { data, error } = await supabase.functions.invoke('crawl-source', {
+      body: { source_id: sourceId, depth: 'daily' },
     })
-    const result = await resp.json()
-    console.log('[inspo] crawl result:', result)
-    // Reload photos so new images appear immediately
-    const { data: fresh } = await supabase
-      .from('inspo_photos')
-      .select('*')
-      .or('hidden.is.null,hidden.eq.false')
-      .order('position')
-    if (fresh) setPhotos(fresh)
-    // Update last_crawled_at in local sources state
-    setSources(prev => prev.map(s =>
-      s.id === sourceId ? { ...s, last_crawled_at: new Date().toISOString() } : s
-    ))
-    return result
+    if (error) throw error
+    if (data?.error) throw new Error(data.error)
+    return data
   }, [])
 
   return {

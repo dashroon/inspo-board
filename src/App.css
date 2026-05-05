@@ -223,6 +223,22 @@ a { color: inherit; }
 .inspo-source-del-btn { background: none; border: none; cursor: pointer; font-size: 11px; padding: 2px 4px; color: #555; }
 .inspo-source-del-btn:hover { color: #c0392b; }
 
+.inspo-source-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 8px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.inspo-source-crawled-failed {
+  cursor: pointer;
+  color: #e24b4a;
+}
+.inspo-source-crawled-failed:hover { text-decoration: underline; }
+
 /* Filters */
 
 .inspo-filter-clear {
