@@ -3,17 +3,6 @@ import { supabase } from '../lib/supabase'
 
 const DEFAULT_FOLDERS = ['Editorial', 'Street', 'Campaign', 'Runway', 'Saved']
 
-const DEFAULT_SOURCES = [
-  { name: 'Dust Magazine',       url: 'https://dustmagazine.com/feed' },
-  { name: 'Vogue',               url: 'https://www.vogue.com/feed/rss' },
-  { name: 'Vogue Runway',        url: 'https://www.vogue.com/feed/runway/rss' },
-  { name: 'Business of Fashion', url: 'https://www.businessoffashion.com/feed' },
-  { name: 'System Magazine',     url: 'https://system-magazine.com' },
-  { name: '032c',                url: 'https://032c.com/feed' },
-  { name: 'W Magazine',          url: 'https://www.wmagazine.com/feed/rss' },
-  { name: "Harper's Bazaar",     url: 'https://www.harpersbazaar.com/rss/all.xml' },
-  { name: 'SSENSE Editorial',    url: 'https://www.ssense.com/en-us/editorial/feed' },
-]
 
 export function useInspo() {
   const [folders, setFolders] = useState([])
@@ -42,16 +31,7 @@ export function useInspo() {
           setFolders(loaded)
         }
 
-        // Seed default sources
-        if (!sRes.error) {
-          let loaded = sRes.data || []
-          if (loaded.length === 0) {
-            const toSeed = DEFAULT_SOURCES.map((s) => ({ name: s.name, url: s.url }))
-            const { data: seeded } = await supabase.from('inspo_sources').insert(toSeed).select()
-            loaded = seeded || []
-          }
-          setSources(loaded)
-        }
+        if (!sRes.error) setSources(sRes.data || [])
 
         if (!pRes.error) setPhotos(pRes.data || [])
         setLoading(false)
