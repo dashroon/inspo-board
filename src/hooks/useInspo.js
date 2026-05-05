@@ -42,7 +42,7 @@ export function useInspo() {
     }
     load()
 
-    const channel = supabase
+    const sourcesChannel = supabase
       .channel('inspo_sources_live')
       .on(
         'postgres_changes',
@@ -65,8 +65,39 @@ export function useInspo() {
       )
       .subscribe()
 
+    const photosChannel = supabase
+      .channel('inspo_photos_live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inspo_photos' },
+        (payload) => {
+          setPhotos((cur) => {
+            if (payload.eventType === 'INSERT') {
+              // Skip hidden inserts (matches the load query filter)
+              if (payload.new.hidden) return cur
+              // Avoid duplicate if optimistic addPhoto already inserted it
+              if (cur.some((p) => p.id === payload.new.id)) return cur
+              return [...cur, payload.new]
+            }
+            if (payload.eventType === 'UPDATE') {
+              // If the row got hidden, drop it from the array
+              if (payload.new.hidden) {
+                return cur.filter((p) => p.id !== payload.new.id)
+              }
+              return cur.map((p) => (p.id === payload.new.id ? payload.new : p))
+            }
+            if (payload.eventType === 'DELETE') {
+              return cur.filter((p) => p.id !== payload.old.id)
+            }
+            return cur
+          })
+        }
+      )
+      .subscribe()
+
     return () => {
-      supabase.removeChannel(channel)
+      supabase.removeChannel(sourcesChannel)
+      supabase.removeChannel(photosChannel)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
